@@ -72,26 +72,31 @@ while True:
             imgWhite[:, hGap:hCal + hGap] = imgResize
             prediction, index = Classifier.getPrediction(imgWhite, draw=False)
 
-        # Get the label of the predicted gesture
+        # Inside the while loop, update this section:
         if 0 <= index < len(labels):
             new_gesture = labels[index]
 
-            # If the gesture is the same as before, check if it's been detected for 3 seconds
-            if new_gesture == current_gesture:
-                if gesture_time and time.time() - gesture_time >= 3:
-                    if new_gesture != "D":  # Don't launch for "D"
-                        app_path = app_dict.get(new_gesture, None)
-                        if app_path and not last_opened_process:  # Ensure the app isn't already open
-                            last_opened_process = subprocess.Popen([app_path], shell=True)
-                            print(f"Opening {new_gesture} App...")
-            else:
-                current_gesture = new_gesture
-                gesture_time = time.time()  # Reset the time for new gesture
+            # Only process if the detected gesture has changed from the last gesture
+            if new_gesture != current_gesture:
+                current_gesture = new_gesture  # Set the current gesture to the new one
+                gesture_time = time.time()  # Reset the timer for the new gesture
 
-            # If "D" gesture is detected, try to close the last opened app
-            if new_gesture == "D" and last_opened_process:
+            # Check if the gesture is stable for 3 seconds before launching
+            if new_gesture == current_gesture and time.time() - gesture_time >= 3:
+                # Check if the gesture corresponds to an app in app_dict and last_opened_process is None
+                if new_gesture in app_dict and (not last_opened_process or last_opened_process.poll() is not None):
+                    app_path = app_dict[new_gesture]
+                    last_opened_process = subprocess.Popen([app_path], shell=True)
+                    print(f"Opening {new_gesture} App...")
+
+                    # After opening, reset gesture tracking so it doesn’t open repeatedly
+                    current_gesture = None
+                    gesture_time = None  # Reset gesture time to prevent re-opening
+
+            # If "D" gesture is detected, close the last opened app
+            if new_gesture == "D" and last_opened_process and last_opened_process.poll() is None:
                 try:
-                    os.kill(last_opened_process.pid, 9)  # Close the last opened app
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(last_opened_process.pid)], shell=True)
                     print("Closed the last opened app.")
                     last_opened_process = None  # Reset after closing the app
                 except Exception as e:
